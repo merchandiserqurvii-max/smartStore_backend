@@ -240,7 +240,16 @@ const assignTask = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, updated, 'Task assigned'));
 });
 
+// DELETE /api/material-request/all  — Admin: wipe all requests + notifications
+const clearAllRequests = asyncHandler(async (req, res) => {
+  const pool = getPool();
+  await pool.query('TRUNCATE TABLE material_requests RESTART IDENTITY CASCADE');
+  await pool.query('TRUNCATE TABLE notifications    RESTART IDENTITY CASCADE');
+  res.status(200).json(new ApiResponse(200, null, 'All requests and notifications deleted'));
+});
+
 module.exports = {
   create, createBulk, getMyRequests, getStoreRequests, getAdminRequests,
   getTodaySummary, acceptRequest, issueRequest, markReceived, getReport, assignTask,
+  clearAllRequests,
 };
