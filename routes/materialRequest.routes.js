@@ -14,5 +14,6 @@ router.put('/:id/issue',          verifyToken,           ctrl.issueRequest);
 router.put('/:id/received',       verifyToken,           ctrl.markReceived);
 router.put('/:id/assign',         verifyToken, isStore,  ctrl.assignTask);
 router.get('/report',             verifyToken, isAdmin,  ctrl.getReport);
+router.delete('/all',             verifyToken, isAdmin,  ctrl.clearAllRequests);
 
 module.exports = router;
