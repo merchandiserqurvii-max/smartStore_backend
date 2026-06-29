@@ -10,14 +10,16 @@ const normalizeLocation = function(name) {
 };
 
 // Return all active items accessible for the given location name
+// Also JOIN inventory_items to get current stock (for out-of-stock badge)
 const getItemsForLocation = async function(location_name) {
   var pool       = getPool();
   var normalized = normalizeLocation(location_name);
 
   var result = await pool.query(
-    'SELECT i.*' +
+    'SELECT i.*, COALESCE(inv.available_quantity, -1) AS stock_qty' +
     ' FROM items i' +
     ' JOIN item_location_access ila ON ila.item_id = i.id' +
+    ' LEFT JOIN inventory_items inv ON LOWER(inv.material_name) = LOWER(i.name)' +
     ' WHERE ila.location_name = $1' +
     '   AND i.status = $2' +
     ' ORDER BY i.goes_to_admin, i.name',

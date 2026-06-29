@@ -2,11 +2,12 @@ const inventoryService = require('../services/inventory.service');
 const ApiResponse      = require('../utils/ApiResponse');
 const ApiError         = require('../utils/ApiError');
 const asyncHandler     = require('../utils/asyncHandler');
+const { getPool }      = require('../config/db');
 
 
 const getAll = asyncHandler(async (req, res) => {
-  const { search, status } = req.query;
-  const items = await inventoryService.getAllItems({ search, status });
+  const { search, status, low_stock } = req.query;
+  const items = await inventoryService.getAllItems({ search, status, low_stock });
   res.status(200).json(new ApiResponse(200, items, 'Inventory items fetched'));
 });
 
@@ -16,11 +17,11 @@ const getByCode = asyncHandler(async (req, res) => {
 });
 
 const create = asyncHandler(async (req, res) => {
-  const { material_code, material_name, available_quantity, unit, status } = req.body;
+  const { material_code, material_name, available_quantity, unit, status, min_quantity } = req.body;
   if (!material_code || !material_name) {
     throw new ApiError(400, 'material_code and material_name are required');
   }
-  const item = await inventoryService.createItem({ material_code, material_name, available_quantity, unit, status });
+  const item = await inventoryService.createItem({ material_code, material_name, available_quantity, unit, status, min_quantity });
   res.status(201).json(new ApiResponse(201, item, 'Item created'));
 });
 
@@ -55,4 +56,14 @@ const setStock = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, item, 'Stock updated'));
 });
 
-module.exports = { getAll, getByCode, create, update, bulkUpsert, clearAll, setStock };
+const deleteOne = asyncHandler(async (req, res) => {
+  const pool = getPool();
+  const result = await pool.query(
+    'DELETE FROM inventory_items WHERE id = $1 RETURNING *',
+    [parseInt(req.params.id, 10)]
+  );
+  if (!result.rows.length) throw new ApiError(404, 'Item not found');
+  res.status(200).json(new ApiResponse(200, null, 'Item deleted'));
+});
+
+module.exports = { getAll, getByCode, create, update, bulkUpsert, clearAll, setStock, deleteOne };

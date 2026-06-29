@@ -15,6 +15,8 @@ const notifRoutes     = require('./routes/notification.routes');
 const styleRoutes     = require('./routes/style.routes');
 const itemsRoutes     = require('./routes/items.routes');
 const scanRoutes      = require('./routes/scan.routes');
+const unitsRoutes         = require('./routes/units.routes');
+const storeWorkersRoutes  = require('./routes/storeWorkers.routes');
 
 const app    = express();
 const server = http.createServer(app);
@@ -47,6 +49,8 @@ app.use('/api/notifications',    notifRoutes);
 app.use('/api/style-details',    styleRoutes);
 app.use('/api/items',            itemsRoutes);
 app.use('/api/scan',             scanRoutes);
+app.use('/api/units',            unitsRoutes);
+app.use('/api/store-workers',    storeWorkersRoutes);
 
 app.use(function(req, res) {
   res.status(404).json({ success: false, message: 'Route not found' });

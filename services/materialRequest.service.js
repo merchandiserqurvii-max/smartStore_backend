@@ -169,13 +169,22 @@ const issueRequest = async (id) => {
     const req = result.rows[0];
 
     // Decrement inventory (floor at 0)
-    await client.query(
-      `UPDATE inventory_items
-       SET available_quantity = GREATEST(0, available_quantity - $1),
-           updated_at = NOW()
-       WHERE material_code = $2`,
-      [req.quantity, req.material_code]
-    );
+    // Try by material_code first; fall back to name match for item-based requests
+    if (req.material_code) {
+      await client.query(
+        `UPDATE inventory_items
+         SET available_quantity = GREATEST(0, available_quantity - $1), updated_at = NOW()
+         WHERE material_code = $2`,
+        [req.quantity, req.material_code]
+      );
+    } else if (req.material_name) {
+      await client.query(
+        `UPDATE inventory_items
+         SET available_quantity = GREATEST(0, available_quantity - $1), updated_at = NOW()
+         WHERE LOWER(material_name) = LOWER($2)`,
+        [req.quantity, req.material_name]
+      );
+    }
 
     await client.query('COMMIT');
     return req;
@@ -232,7 +241,35 @@ const getAdminRequests = async ({ status, search, limit = 100 }) => {
   return result.rows;
 };
 
+/**
+ * Create multiple requests at once (cart checkout).
+ */
+const createBulkRequests = async (items, userData) => {
+  const results = [];
+  for (const item of items) {
+    const result = await createRequest({ ...userData, ...item });
+    results.push(result);
+  }
+  return results;
+};
+
+/**
+ * Assign task to an employee before issuing.
+ */
+const assignTask = async (id, assigned_to_name) => {
+  const pool = getPool();
+  const result = await pool.query(
+    `UPDATE material_requests
+     SET assigned_to_name = $1, assigned_at = NOW(), updated_at = NOW()
+     WHERE id = $2
+     RETURNING *`,
+    [assigned_to_name, id]
+  );
+  if (result.rows.length === 0) throw new ApiError(404, 'Request not found');
+  return result.rows[0];
+};
+
 module.exports = {
-  createRequest, getMyRequests, getStoreRequests, getAdminRequests,
-  getTodaySummary, acceptRequest, issueRequest, markReceived,
+  createRequest, createBulkRequests, getMyRequests, getStoreRequests, getAdminRequests,
+  getTodaySummary, acceptRequest, issueRequest, markReceived, assignTask,
 };

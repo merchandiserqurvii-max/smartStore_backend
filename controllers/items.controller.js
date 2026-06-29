@@ -2,6 +2,7 @@ const itemsService = require('../services/items.service');
 const ApiResponse  = require('../utils/ApiResponse');
 const ApiError     = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
+const { getPool }  = require('../config/db');
 
 /** GET /api/items?location_name=shipping+table  OR  /api/items (all) */
 const getItems = asyncHandler(async (req, res) => {
@@ -41,4 +42,104 @@ const updateItemLocations = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, null, 'Item locations updated'));
 });
 
-module.exports = { getItems, createItem, updateItem, getItemLocations, updateItemLocations };
+/**
+ * GET /api/items/access-list  (admin only)
+ * Returns all active inventory_items, joined with their items-catalog entry + location access list.
+ */
+const getAccessList = asyncHandler(async (req, res) => {
+  const pool = getPool();
+  const result = await pool.query(`
+    SELECT
+      inv.id                  AS inv_id,
+      inv.material_name,
+      inv.unit,
+      inv.available_quantity,
+      inv.status              AS inv_status,
+      it.id                   AS item_id,
+      it.goes_to_admin,
+      COALESCE(
+        array_agg(ila.location_name ORDER BY ila.location_name)
+          FILTER (WHERE ila.location_name IS NOT NULL),
+        '{}'
+      )                       AS locations
+    FROM inventory_items inv
+    LEFT JOIN items it ON LOWER(it.name) = LOWER(inv.material_name)
+    LEFT JOIN item_location_access ila ON ila.item_id = it.id
+    WHERE inv.status = 'active'
+    GROUP BY inv.id, it.id
+    ORDER BY inv.material_name
+  `);
+  res.status(200).json(new ApiResponse(200, result.rows, 'Access list fetched'));
+});
+
+/**
+ * PUT /api/items/access-list/:inv_id/name  (admin only)
+ * Updates material_name in inventory_items AND items catalog (if linked).
+ */
+const updateAccessItemName = asyncHandler(async (req, res) => {
+  const { material_name } = req.body;
+  if (!material_name || !material_name.trim()) throw new ApiError(400, 'material_name is required');
+  const pool    = getPool();
+  const invId   = parseInt(req.params.inv_id, 10);
+  const newName = material_name.trim();
+
+  const cur = await pool.query('SELECT material_name, unit FROM inventory_items WHERE id = $1', [invId]);
+  if (!cur.rows.length) throw new ApiError(404, 'Inventory item not found');
+  const oldName = cur.rows[0].material_name;
+
+  // Update inventory
+  await pool.query('UPDATE inventory_items SET material_name = $1, updated_at = NOW() WHERE id = $2', [newName, invId]);
+  // Sync items catalog if linked
+  await pool.query('UPDATE items SET name = $1 WHERE LOWER(name) = LOWER($2)', [newName, oldName]);
+
+  res.status(200).json(new ApiResponse(200, { material_name: newName }, 'Name updated'));
+});
+
+/**
+ * PUT /api/items/access-list/:inv_id/locations  (admin only)
+ * Updates location access for the inventory item.
+ * Auto-creates an items-catalog entry if none exists yet.
+ */
+const updateAccessItemLocations = asyncHandler(async (req, res) => {
+  const { location_names } = req.body;
+  if (!Array.isArray(location_names)) throw new ApiError(400, 'location_names must be an array');
+  const pool  = getPool();
+  const invId = parseInt(req.params.inv_id, 10);
+
+  const invRow = await pool.query('SELECT material_name, unit FROM inventory_items WHERE id = $1', [invId]);
+  if (!invRow.rows.length) throw new ApiError(404, 'Inventory item not found');
+  const { material_name, unit } = invRow.rows[0];
+
+  // Find or create catalog entry
+  let itemRow = await pool.query('SELECT id FROM items WHERE LOWER(name) = LOWER($1)', [material_name]);
+  let itemId;
+  if (itemRow.rows.length === 0) {
+    const created = await pool.query(
+      'INSERT INTO items (name, unit, goes_to_admin) VALUES ($1, $2, false) RETURNING id',
+      [material_name, unit || 'pcs']
+    );
+    itemId = created.rows[0].id;
+  } else {
+    itemId = itemRow.rows[0].id;
+  }
+
+  await itemsService.updateItemLocations(itemId, location_names);
+  res.status(200).json(new ApiResponse(200, { item_id: itemId }, 'Locations updated'));
+});
+
+/**
+ * GET /api/items/all-locations  (admin only)
+ * Returns all distinct location names known to the system (from item_location_access).
+ */
+const getAllKnownLocations = asyncHandler(async (req, res) => {
+  const pool = getPool();
+  const result = await pool.query(
+    'SELECT DISTINCT location_name FROM item_location_access ORDER BY location_name'
+  );
+  res.status(200).json(new ApiResponse(200, result.rows.map((r) => r.location_name), 'Locations fetched'));
+});
+
+module.exports = {
+  getItems, createItem, updateItem, getItemLocations, updateItemLocations,
+  getAccessList, updateAccessItemName, updateAccessItemLocations, getAllKnownLocations,
+};

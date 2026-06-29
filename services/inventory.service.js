@@ -1,7 +1,7 @@
 const { getPool } = require('../config/db');
 const ApiError    = require('../utils/ApiError');
 
-const getAllItems = async ({ search, status }) => {
+const getAllItems = async ({ search, status, low_stock }) => {
   const pool  = getPool();
   let   query = 'SELECT * FROM inventory_items WHERE 1=1';
   const params = [];
@@ -15,6 +15,9 @@ const getAllItems = async ({ search, status }) => {
     query += ` AND (material_name ILIKE $${idx} OR CAST(material_code AS TEXT) ILIKE $${idx})`;
     params.push(`%${search}%`);
     idx++;
+  }
+  if (low_stock === 'true' || low_stock === true) {
+    query += ' AND available_quantity <= min_quantity';
   }
 
   query += ' ORDER BY material_name ASC';
@@ -34,20 +37,20 @@ const getItemByCode = async (material_code) => {
   return result.rows[0];
 };
 
-const createItem = async ({ material_code, material_name, available_quantity, unit, status }) => {
+const createItem = async ({ material_code, material_name, available_quantity, unit, status, min_quantity }) => {
   const pool   = getPool();
   const result = await pool.query(
-    `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [material_code, material_name, available_quantity || 0, unit || 'pcs', status || 'active']
+    [material_code, material_name, available_quantity || 0, unit || 'pcs', status || 'active', min_quantity || 0]
   );
   return result.rows[0];
 };
 
 const updateItem = async (id, fields) => {
   const pool    = getPool();
-  const allowed = ['material_name', 'available_quantity', 'unit', 'status'];
+  const allowed = ['material_name', 'available_quantity', 'unit', 'status', 'min_quantity'];
   const updates = [];
   const values  = [];
   let   idx     = 1;
@@ -89,19 +92,20 @@ const bulkUpsert = async (items) => {
   try {
     await client.query('BEGIN');
     for (const item of items) {
-      const { material_code, material_name, available_quantity, unit, status } = item;
+      const { material_code, material_name, available_quantity, unit, status, min_quantity } = item;
       if (!material_code || !material_name) continue;
       const validStatus = ['active', 'inactive'].includes((status || '').toLowerCase()) ? status.toLowerCase() : 'active';
       const r = await client.query(
-        `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (material_code) DO UPDATE
            SET material_name      = EXCLUDED.material_name,
                available_quantity = inventory_items.available_quantity + EXCLUDED.available_quantity,
                status             = EXCLUDED.status,
+               min_quantity       = EXCLUDED.min_quantity,
                updated_at         = NOW()
          RETURNING *`,
-        [parseInt(material_code, 10), material_name.toString().trim(), parseFloat(available_quantity) || 0, (unit || 'pcs').toString().trim(), validStatus]
+        [parseInt(material_code, 10), material_name.toString().trim(), parseFloat(available_quantity) || 0, (unit || 'pcs').toString().trim(), validStatus, parseFloat(min_quantity) || 0]
       );
       results.push(r.rows[0]);
     }

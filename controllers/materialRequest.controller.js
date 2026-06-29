@@ -173,7 +173,74 @@ const getReport = asyncHandler(async (req, res) => {
   }, 'Report fetched'));
 });
 
+// POST /api/material-request/bulk — Create multiple requests at once (cart checkout)
+const createBulk = asyncHandler(async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new ApiError(400, 'items array required');
+  }
+  const { employee_id, employee_name, department, work_location } = req.user;
+  const userData = { employee_id, employee_name, department: department || work_location, work_location };
+  const allItems = await itemsService.getAllItems();
+  const io       = req.app.get('io');
+  const results  = [];
+
+  // Pre-validate stock for all store items
+  const pool = getPool();
+  for (const entry of items) {
+    const { item_id, quantity } = entry;
+    if (!item_id || !quantity) continue;
+    const item = allItems.find((i) => i.id === parseInt(item_id, 10));
+    if (!item || item.goes_to_admin) continue; // admin items skip stock check
+    const invRow = await pool.query(
+      'SELECT available_quantity FROM inventory_items WHERE LOWER(material_name) = LOWER($1) AND status = $2',
+      [item.name, 'active']
+    );
+    if (invRow.rows.length > 0) {
+      const available = Number(invRow.rows[0].available_quantity);
+      if (available < Number(quantity)) {
+        throw new ApiError(400, `"${item.name}" mein sirf ${available} ${item.unit} available hai. Aapne ${quantity} request kiya.`);
+      }
+    }
+  }
+
+  for (const entry of items) {
+    const { item_id, quantity, notes } = entry;
+    if (!item_id || !quantity) continue;
+    const item = allItems.find((i) => i.id === parseInt(item_id, 10));
+    if (!item) continue;
+    const destination = item.goes_to_admin ? 'admin' : 'store';
+    const { request: newReq, autoAccepted } = await requestService.createRequest({
+      ...userData,
+      item_id:       item.id,
+      material_name: item.name,
+      quantity,
+      unit:          item.unit,
+      notes:         notes || null,
+      destination,
+    });
+    if (io) {
+      const room = destination === 'store' ? 'store-room' : 'admin-room';
+      io.to(room).emit('new-request', { request: newReq, autoAccepted });
+      if (autoAccepted) io.emit('request-updated', newReq);
+    }
+    results.push(newReq);
+  }
+
+  res.status(201).json(new ApiResponse(201, results, `${results.length} request(s) created`));
+});
+
+// PUT /api/material-request/:id/assign — Assign task to an employee before printing
+const assignTask = asyncHandler(async (req, res) => {
+  const { assigned_to_name } = req.body;
+  if (!assigned_to_name) throw new ApiError(400, 'assigned_to_name required');
+  const updated = await requestService.assignTask(req.params.id, assigned_to_name);
+  const io = req.app.get('io');
+  if (io) io.emit('request-updated', updated);
+  res.status(200).json(new ApiResponse(200, updated, 'Task assigned'));
+});
+
 module.exports = {
-  create, getMyRequests, getStoreRequests, getAdminRequests,
-  getTodaySummary, acceptRequest, issueRequest, markReceived, getReport,
+  create, createBulk, getMyRequests, getStoreRequests, getAdminRequests,
+  getTodaySummary, acceptRequest, issueRequest, markReceived, getReport, assignTask,
 };
