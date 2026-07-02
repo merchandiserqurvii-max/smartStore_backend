@@ -51,9 +51,11 @@ const getAccessList = asyncHandler(async (req, res) => {
   const result = await pool.query(`
     SELECT
       inv.id                  AS inv_id,
+      inv.material_code,
       inv.material_name,
       inv.unit,
       inv.available_quantity,
+      inv.category,
       inv.status              AS inv_status,
       it.id                   AS item_id,
       it.goes_to_admin,
@@ -125,6 +127,22 @@ const updateAccessItemLocations = asyncHandler(async (req, res) => {
 
   await itemsService.updateItemLocations(itemId, location_names);
   res.status(200).json(new ApiResponse(200, { item_id: itemId }, 'Locations updated'));
+});
+
+/**
+ * PUT /api/items/access-list/:inv_id/category  (admin only)
+ */
+const updateAccessItemCategory = asyncHandler(async (req, res) => {
+  const { category } = req.body;
+  const pool  = getPool();
+  const invId = parseInt(req.params.inv_id, 10);
+  const cat   = (category || '').trim() || null;
+  const row   = await pool.query(
+    'UPDATE inventory_items SET category = $1 WHERE id = $2 RETURNING id, category',
+    [cat, invId]
+  );
+  if (!row.rows.length) throw new ApiError(404, 'Inventory item not found');
+  res.status(200).json(new ApiResponse(200, row.rows[0], 'Category updated'));
 });
 
 /**
@@ -207,6 +225,6 @@ const getAllKnownLocations = asyncHandler(async (req, res) => {
 
 module.exports = {
   getItems, createItem, updateItem, getItemLocations, updateItemLocations,
-  getAccessList, updateAccessItemName, updateAccessItemLocations, getAllKnownLocations,
-  bulkUpdateAccessLocations,
+  getAccessList, updateAccessItemName, updateAccessItemLocations, updateAccessItemCategory,
+  getAllKnownLocations, bulkUpdateAccessLocations,
 };

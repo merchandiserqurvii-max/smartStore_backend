@@ -12,6 +12,7 @@ router.get('/all-locations',                            verifyToken, isAdmin, it
 router.post('/access-list/bulk-locations',              verifyToken, isAdmin, itemsController.bulkUpdateAccessLocations);
 router.put('/access-list/:inv_id/name',                 verifyToken, isAdmin, itemsController.updateAccessItemName);
 router.put('/access-list/:inv_id/locations',            verifyToken, isAdmin, itemsController.updateAccessItemLocations);
+router.put('/access-list/:inv_id/category',             verifyToken, isAdmin, itemsController.updateAccessItemCategory);
 
 // ── Admin: item catalog management ──────────────────────────────────────
 router.post('/',              verifyToken, isAdmin, itemsController.createItem);

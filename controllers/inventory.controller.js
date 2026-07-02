@@ -17,11 +17,14 @@ const getByCode = asyncHandler(async (req, res) => {
 });
 
 const create = asyncHandler(async (req, res) => {
-  const { material_code, material_name, available_quantity, unit, status, min_quantity } = req.body;
+  const { material_code, material_name, available_quantity, unit, status, min_quantity, category } = req.body;
   if (!material_code || !material_name) {
     throw new ApiError(400, 'material_code and material_name are required');
   }
-  const item = await inventoryService.createItem({ material_code, material_name, available_quantity, unit, status, min_quantity });
+  const item = await inventoryService.createItem({
+    material_code, material_name, available_quantity, unit, status, min_quantity,
+    category: (category || '').trim() || null,
+  });
   res.status(201).json(new ApiResponse(201, item, 'Item created'));
 });
 

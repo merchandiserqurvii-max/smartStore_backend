@@ -37,13 +37,13 @@ const getItemByCode = async (material_code) => {
   return result.rows[0];
 };
 
-const createItem = async ({ material_code, material_name, available_quantity, unit, status, min_quantity }) => {
+const createItem = async ({ material_code, material_name, available_quantity, unit, status, min_quantity, category }) => {
   const pool   = getPool();
   const result = await pool.query(
-    `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity, category)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [material_code, material_name, available_quantity || 0, unit || 'pcs', status || 'active', min_quantity || 0]
+    [material_code, material_name, available_quantity || 0, unit || 'pcs', status || 'active', min_quantity || 0, category || null]
   );
   return result.rows[0];
 };
@@ -92,20 +92,23 @@ const bulkUpsert = async (items) => {
   try {
     await client.query('BEGIN');
     for (const item of items) {
-      const { material_code, material_name, available_quantity, unit, status, min_quantity } = item;
+      const { material_code, material_name, available_quantity, unit, status, min_quantity, category } = item;
       if (!material_code || !material_name) continue;
       const validStatus = ['active', 'inactive'].includes((status || '').toLowerCase()) ? status.toLowerCase() : 'active';
+      const cat = (category || '').toString().trim() || null;
       const r = await client.query(
-        `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity, category)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (material_code) DO UPDATE
            SET material_name      = EXCLUDED.material_name,
                available_quantity = inventory_items.available_quantity + EXCLUDED.available_quantity,
                status             = EXCLUDED.status,
                min_quantity       = EXCLUDED.min_quantity,
+               category           = CASE WHEN EXCLUDED.category IS NOT NULL THEN EXCLUDED.category
+                                         ELSE inventory_items.category END,
                updated_at         = NOW()
          RETURNING *`,
-        [parseInt(material_code, 10), material_name.toString().trim(), parseFloat(available_quantity) || 0, (unit || 'pcs').toString().trim(), validStatus, parseFloat(min_quantity) || 0]
+        [parseInt(material_code, 10), material_name.toString().trim(), parseFloat(available_quantity) || 0, (unit || 'pcs').toString().trim(), validStatus, parseFloat(min_quantity) || 0, cat]
       );
       results.push(r.rows[0]);
     }

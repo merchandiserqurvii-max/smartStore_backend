@@ -16,13 +16,15 @@ const getItemsForLocation = async function(location_name) {
   var normalized = normalizeLocation(location_name);
 
   var result = await pool.query(
-    'SELECT i.*, COALESCE(inv.available_quantity, -1) AS stock_qty' +
-    ' FROM items i' +
-    ' JOIN item_location_access ila ON ila.item_id = i.id' +
-    ' LEFT JOIN inventory_items inv ON LOWER(inv.material_name) = LOWER(i.name)' +
-    ' WHERE ila.location_name = $1' +
-    '   AND i.status = $2' +
-    ' ORDER BY i.goes_to_admin, i.name',
+    'SELECT * FROM (' +
+    '  SELECT DISTINCT ON (i.id) i.*, COALESCE(inv.available_quantity, -1) AS stock_qty, inv.category' +
+    '  FROM items i' +
+    '  JOIN item_location_access ila ON ila.item_id = i.id' +
+    '  LEFT JOIN inventory_items inv ON LOWER(inv.material_name) = LOWER(i.name) AND inv.status = $2' +
+    '  WHERE ila.location_name = $1 AND i.status = $2' +
+    '  ORDER BY i.id' +
+    ') sub' +
+    ' ORDER BY goes_to_admin, category NULLS LAST, name',
     [normalized, 'active']
   );
   return result.rows;
