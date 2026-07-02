@@ -128,6 +128,72 @@ const updateAccessItemLocations = asyncHandler(async (req, res) => {
 });
 
 /**
+ * POST /api/items/access-list/bulk-locations  (admin only)
+ * Body: { updates: [{ material_name, location_names }] }
+ * Matches inventory items by name (case-insensitive) and sets their locations.
+ */
+const bulkUpdateAccessLocations = asyncHandler(async (req, res) => {
+  const { updates } = req.body;
+  if (!Array.isArray(updates) || updates.length === 0)
+    throw new ApiError(400, 'updates array is required');
+
+  const pool    = getPool();
+  const results = [];
+
+  for (const upd of updates) {
+    const locations = Array.isArray(upd.location_names) ? upd.location_names : [];
+    const invIdRaw  = upd.inv_id     ? parseInt(upd.inv_id, 10)      : null;
+    const code      = (upd.material_code  || '').trim();
+    const name      = (upd.material_name  || '').trim();
+
+    // Identify inventory row: prefer inv_id > material_code > material_name
+    let invRow;
+    if (invIdRaw) {
+      invRow = await pool.query(
+        "SELECT id, material_name, unit FROM inventory_items WHERE id = $1 AND status = 'active'",
+        [invIdRaw]
+      );
+    } else if (code) {
+      invRow = await pool.query(
+        "SELECT id, material_name, unit FROM inventory_items WHERE UPPER(material_code) = UPPER($1) AND status = 'active'",
+        [code]
+      );
+    } else if (name) {
+      invRow = await pool.query(
+        "SELECT id, material_name, unit FROM inventory_items WHERE LOWER(material_name) = LOWER($1) AND status = 'active'",
+        [name]
+      );
+    } else {
+      continue;
+    }
+
+    if (!invRow || !invRow.rows.length) {
+      results.push({ material_name: name || code || String(invIdRaw), status: 'not_found' });
+      continue;
+    }
+    const { id: invId, material_name: matName, unit } = invRow.rows[0];
+
+    // Find or create catalog entry
+    let itemRow = await pool.query('SELECT id FROM items WHERE LOWER(name) = LOWER($1)', [matName]);
+    let itemId;
+    if (!itemRow.rows.length) {
+      const created = await pool.query(
+        'INSERT INTO items (name, unit, goes_to_admin) VALUES ($1, $2, false) RETURNING id',
+        [matName, unit || 'pcs']
+      );
+      itemId = created.rows[0].id;
+    } else {
+      itemId = itemRow.rows[0].id;
+    }
+
+    await itemsService.updateItemLocations(itemId, locations);
+    results.push({ material_name: matName, status: 'updated', locations_count: locations.length });
+  }
+
+  res.status(200).json(new ApiResponse(200, results, 'Bulk update complete'));
+});
+
+/**
  * GET /api/items/all-locations  (admin only)
  * Returns all distinct location names known to the system (from item_location_access).
  */
@@ -142,4 +208,5 @@ const getAllKnownLocations = asyncHandler(async (req, res) => {
 module.exports = {
   getItems, createItem, updateItem, getItemLocations, updateItemLocations,
   getAccessList, updateAccessItemName, updateAccessItemLocations, getAllKnownLocations,
+  bulkUpdateAccessLocations,
 };

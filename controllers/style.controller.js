@@ -1,12 +1,12 @@
-const ApiResponse  = require('../utils/ApiResponse');
-const ApiError     = require('../utils/ApiError');
+const ApiResponse = require('../utils/ApiResponse');
+const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 
 // Mock style database — replace with real external API call in production
 const MOCK_STYLES = {
   ST1001: {
     styleNumber: 'ST1001',
-    styleName:   "Women's Kurti",
+    styleName: "Women's Kurti",
     materials: [
       { materialCode: 'TH001', materialName: 'White Thread' },
       { materialCode: 'BT001', materialName: 'Metal Button' },
@@ -15,7 +15,7 @@ const MOCK_STYLES = {
   },
   ST1002: {
     styleNumber: 'ST1002',
-    styleName:   "Men's Shirt",
+    styleName: "Men's Shirt",
     materials: [
       { materialCode: 'TH002', materialName: 'Black Thread' },
       { materialCode: 'BT002', materialName: 'Plastic Button' },
@@ -25,7 +25,7 @@ const MOCK_STYLES = {
   },
   ST1003: {
     styleNumber: 'ST1003',
-    styleName:   "Kids Frock",
+    styleName: 'Kids Frock',
     materials: [
       { materialCode: 'TH003', materialName: 'Red Thread' },
       { materialCode: 'EL001', materialName: 'Elastic Band 1 inch' },
@@ -35,7 +35,7 @@ const MOCK_STYLES = {
   },
   ST1004: {
     styleNumber: 'ST1004',
-    styleName:   "Women's Salwar",
+    styleName: "Women's Salwar",
     materials: [
       { materialCode: 'TH001', materialName: 'White Thread' },
       { materialCode: 'EL002', materialName: 'Elastic Band 2 inch' },
@@ -50,8 +50,10 @@ const getStyleDetails = asyncHandler(async (req, res) => {
 
   // If EXTERNAL_STYLE_API is configured, call the real endpoint
   if (process.env.EXTERNAL_STYLE_API) {
-    const axios    = require('axios');
-    const response = await axios.get(`${process.env.EXTERNAL_STYLE_API}/style-details/${styleNumber}`);
+    const axios = require('axios');
+    const response = await axios.get(
+      `${process.env.EXTERNAL_STYLE_API}/style-details/${styleNumber}`
+    );
     return res.status(200).json(new ApiResponse(200, response.data, 'Style details fetched'));
   }
 
