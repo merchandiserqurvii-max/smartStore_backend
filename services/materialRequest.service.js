@@ -87,7 +87,15 @@ const getMyRequests = async (employee_id, { status, limit = 50 }) => {
 const getStoreRequests = async ({ status, department, work_location, date, search, limit = 100 }) => {
   const pool   = getPool();
   // Store only sees destination='store' requests; admin items route to admin queue
-  let   query  = "SELECT * FROM material_requests WHERE destination = 'store'";
+  // Also fetch storage location from inventory_items if material is in stock
+  let   query  =
+    `SELECT mr.*,
+       (SELECT inv.location FROM inventory_items inv
+        WHERE (mr.material_code IS NOT NULL AND inv.material_code = mr.material_code)
+           OR (mr.material_code IS NULL AND LOWER(inv.material_name) = LOWER(mr.material_name) AND inv.status = 'active')
+        LIMIT 1) AS inv_location
+     FROM material_requests mr
+     WHERE destination = 'store'`;
   const params = [];
   let   idx    = 1;
 

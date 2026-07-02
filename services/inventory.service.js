@@ -37,20 +37,20 @@ const getItemByCode = async (material_code) => {
   return result.rows[0];
 };
 
-const createItem = async ({ material_code, material_name, available_quantity, unit, status, min_quantity, category }) => {
+const createItem = async ({ material_code, material_name, available_quantity, unit, status, min_quantity, category, location }) => {
   const pool   = getPool();
   const result = await pool.query(
-    `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity, category)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity, category, location)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [material_code, material_name, available_quantity || 0, unit || 'pcs', status || 'active', min_quantity || 0, category || null]
+    [material_code, material_name, available_quantity || 0, unit || 'pcs', status || 'active', min_quantity || 0, category || null, location || null]
   );
   return result.rows[0];
 };
 
 const updateItem = async (id, fields) => {
   const pool    = getPool();
-  const allowed = ['material_name', 'available_quantity', 'unit', 'status', 'min_quantity'];
+  const allowed = ['material_name', 'available_quantity', 'unit', 'status', 'min_quantity', 'location', 'category'];
   const updates = [];
   const values  = [];
   let   idx     = 1;
@@ -92,13 +92,14 @@ const bulkUpsert = async (items) => {
   try {
     await client.query('BEGIN');
     for (const item of items) {
-      const { material_code, material_name, available_quantity, unit, status, min_quantity, category } = item;
+      const { material_code, material_name, available_quantity, unit, status, min_quantity, category, location } = item;
       if (!material_code || !material_name) continue;
       const validStatus = ['active', 'inactive'].includes((status || '').toLowerCase()) ? status.toLowerCase() : 'active';
       const cat = (category || '').toString().trim() || null;
+      const loc = (location || '').toString().trim() || null;
       const r = await client.query(
-        `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity, category)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO inventory_items (material_code, material_name, available_quantity, unit, status, min_quantity, category, location)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (material_code) DO UPDATE
            SET material_name      = EXCLUDED.material_name,
                available_quantity = inventory_items.available_quantity + EXCLUDED.available_quantity,
@@ -106,9 +107,11 @@ const bulkUpsert = async (items) => {
                min_quantity       = EXCLUDED.min_quantity,
                category           = CASE WHEN EXCLUDED.category IS NOT NULL THEN EXCLUDED.category
                                          ELSE inventory_items.category END,
+               location           = CASE WHEN EXCLUDED.location IS NOT NULL THEN EXCLUDED.location
+                                         ELSE inventory_items.location END,
                updated_at         = NOW()
          RETURNING *`,
-        [parseInt(material_code, 10), material_name.toString().trim(), parseFloat(available_quantity) || 0, (unit || 'pcs').toString().trim(), validStatus, parseFloat(min_quantity) || 0, cat]
+        [parseInt(material_code, 10), material_name.toString().trim(), parseFloat(available_quantity) || 0, (unit || 'pcs').toString().trim(), validStatus, parseFloat(min_quantity) || 0, cat, loc]
       );
       results.push(r.rows[0]);
     }
